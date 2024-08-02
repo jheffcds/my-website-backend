@@ -10,7 +10,14 @@ const app = express();
 
 const uri = process.env.MONGODB_URI;
 
-app.use(cors());
+const corsOptions = {
+    origin: '*', // You can specify your frontend URL here for better security
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+    exposedHeaders: ['x-auth-token']
+};
+
+app.use(cors(corsOptions));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use(compression()); // Enable gzip compression
