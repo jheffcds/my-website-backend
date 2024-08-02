@@ -20,10 +20,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
     maxAge: '1d'
 }));
 
-mongoose.connect(uri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-}).then(() => {
+mongoose.connect(uri).then(() => {
     console.log('MongoDB connected');
 }).catch(err => {
     console.error('MongoDB connection error:', err);
