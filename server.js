@@ -8,7 +8,7 @@ const path = require('path');
 const compression = require('compression');
 const app = express();
 
-const uri = process.env.MONGODB_URI || 'mongodb+srv://jheffcds:Jheff12345!@cluster1.fqatjio.mongodb.net/?retryWrites=true&w=majority&appName=Cluster1';
+const uri = process.env.MONGODB_URI;
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
@@ -255,7 +255,7 @@ app.get('/get-sections/:userId', async (req, res) => {
     }
 });
 
-const port = 8080;
+const port = process.env.PORT || 8080;
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
