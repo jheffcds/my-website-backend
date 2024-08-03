@@ -84,7 +84,7 @@ git.addConfig('user.email', 'jheffcds@gmail.com');
 git.addConfig('user.name', 'jheffcds');
 
 // Clone the repository if the uploads folder does not exist
-const repoUrl = 'https://github.com/your-username/your-upload-repo.git'; // Replace with your repository URL
+const repoUrl = 'https://github.com/jheffcds/my-website-uploads.git'; // Replace with your repository URL
 const localPath = path.join(__dirname, 'uploads');
 
 if (!fs.existsSync(localPath)) {
@@ -94,7 +94,7 @@ if (!fs.existsSync(localPath)) {
 }
 
 // Set up a cron job to pull updates every 30 seconds
-cron.schedule('*/30 * * * * *', () => {
+cron.schedule('*/60 * * * * *', () => {
     git.pull('origin', 'main', (err, update) => {
         if (err) {
             console.error('Error pulling repository updates:', err);
