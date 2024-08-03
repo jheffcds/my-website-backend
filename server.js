@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
@@ -12,6 +13,8 @@ const fs = require('fs');
 const app = express();
 
 const uri = process.env.MONGODB_URI;
+const pat = process.env.GITHUB_PAT; // Make sure to set this environment variable
+const repoUrl = process.env.REPO_URL; // Make sure to set this environment variable
 
 const corsOptions = {
     origin: '*', // You can specify your frontend URL here for better security
@@ -36,61 +39,25 @@ mongoose.connect(uri).then(() => {
     console.error('MongoDB connection error:', err);
 });
 
-// Define User Schema
-const userSchema = new mongoose.Schema({
-    email: { type: String, unique: true, required: true },
-    username: { type: String, unique: true, required: true },
-    password: { type: String, required: true },
-    dob: Date,
-    gender: String,
-    profilePicture: String
-});
-
-const User = mongoose.model('User', userSchema);
-
-// Define Post Schema
-const postSchema = new mongoose.Schema({
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    content: { type: String, required: true },
-    imageUrl: [String], // Store multiple image URLs
-    createdAt: { type: Date, default: Date.now }
-});
-
-const Post = mongoose.model('Post', postSchema);
-
-// Define Section Schema for Portfolio
-const sectionSchema = new mongoose.Schema({
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    sectionId: { type: String, required: true },
-    content: { type: String, required: true },
-});
-
-const Section = mongoose.model('Section', sectionSchema);
-
-// Multer configuration for file uploads
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads');
-    },
-    filename: function (req, file, cb) {
-        cb(null, Date.now() + path.extname(file.originalname)); // Append the correct extension
-    }
-});
-
-const upload = multer({ storage: storage, limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
-
 // Configure Git user
 git.addConfig('user.email', 'jheffcds@gmail.com');
 git.addConfig('user.name', 'jheffcds');
 
+// Configure Git to use PAT for authentication
+git.addConfig('http.extraheader', `AUTHORIZATION: Basic ${Buffer.from(`jheffcds:${pat}`).toString('base64')}`);
+
 // Clone the repository if the uploads folder does not exist
-const repoUrl = 'https://github.com/jheffcds/my-website-uploads.git'; // Replace with your repository URL
 const localPath = path.join(__dirname, 'uploads');
 
 if (!fs.existsSync(localPath)) {
     git.clone(repoUrl, localPath)
-        .then(() => console.log('Repository cloned successfully'))
+        .then(() => {
+            console.log('Repository cloned successfully');
+            git.addRemote('origin', repoUrl);
+        })
         .catch(err => console.error('Error cloning repository:', err));
+} else {
+    git.addRemote('origin', repoUrl);
 }
 
 // Set up a cron job to pull updates every 30 seconds
