@@ -94,7 +94,7 @@ if (!fs.existsSync(localPath)) {
 }
 
 // Set up a cron job to pull updates every 30 seconds
-cron.schedule('*/60 * * * * *', () => {
+cron.schedule('*/30 * * * * *', () => {
     git.pull('origin', 'main', (err, update) => {
         if (err) {
             console.error('Error pulling repository updates:', err);
