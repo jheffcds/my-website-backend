@@ -1,4 +1,3 @@
-require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
@@ -10,12 +9,20 @@ const compression = require('compression');
 const git = require('simple-git')();
 const cron = require('node-cron');
 const fs = require('fs');
+const dotenv = require('dotenv');
+
+dotenv.config();
+
 const app = express();
 
 const uri = process.env.MONGODB_URI;
+const repoUrl = process.env.REPO_URL;
+const gitUserName = process.env.GIT_USER_NAME;
+const gitUserEmail = process.env.GIT_USER_EMAIL;
+const gitPat = process.env.GIT_PAT;
 
 const corsOptions = {
-    origin: '*', // You can specify your frontend URL here for better security
+    origin: '*',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
     exposedHeaders: ['x-auth-token']
@@ -24,9 +31,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
-app.use(compression()); // Enable gzip compression
+app.use(compression());
 
-// Serve static files from the uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
     maxAge: '1d'
 }));
@@ -53,7 +59,7 @@ const User = mongoose.model('User', userSchema);
 const postSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     content: { type: String, required: true },
-    imageUrl: [String], // Store multiple image URLs
+    imageUrl: [String],
     createdAt: { type: Date, default: Date.now }
 });
 
@@ -74,22 +80,20 @@ const storage = multer.diskStorage({
         cb(null, 'uploads');
     },
     filename: function (req, file, cb) {
-        cb(null, Date.now() + path.extname(file.originalname)); // Append the correct extension
+        cb(null, Date.now() + path.extname(file.originalname));
     }
 });
 
-const upload = multer({ storage: storage, limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
+const upload = multer({ storage: storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
-// Configure Git user
-git.addConfig('user.email', process.env.GIT_USER_EMAIL);
-git.addConfig('user.name', process.env.GIT_USER_NAME);
+git.addConfig('user.email', gitUserEmail);
+git.addConfig('user.name', gitUserName);
 
 // Clone the repository if the uploads folder does not exist
-const repoUrl = process.env.REPO_URL;
 const localPath = path.join(__dirname, 'uploads');
 
 if (!fs.existsSync(localPath)) {
-    git.clone(repoUrl, localPath)
+    git.clone(`https://${gitPat}@${repoUrl}`, localPath)
         .then(() => console.log('Repository cloned successfully'))
         .catch(err => console.error('Error cloning repository:', err));
 }
@@ -158,7 +162,7 @@ app.post('/login', async (req, res) => {
 
         res.status(200).json({
             username: user.username,
-            profilePicture: user.profilePicture, // Send the URL
+            profilePicture: user.profilePicture,
             userId: user._id
         });
     } catch (error) {
@@ -178,7 +182,6 @@ app.post('/create-post', upload.array('media', 10), async (req, res) => {
         const post = new Post({ userId, content, imageUrl });
         await post.save();
 
-        // Commit and push new files
         commitAndPushFiles(files.map(file => file.path));
 
         res.status(201).json({ message: 'Post created successfully', imageUrl });
@@ -195,7 +198,7 @@ app.get('/user-posts/:userId', async (req, res) => {
     try {
         const posts = await Post.find({ userId })
             .populate('userId', 'username profilePicture')
-            .sort({ createdAt: -1 }); // Sort by createdAt in descending order
+            .sort({ createdAt: -1 });
         res.status(200).json(posts);
     } catch (error) {
         console.error('Error fetching posts:', error);
@@ -217,7 +220,6 @@ app.post('/update-profile-picture', upload.single('profilePicture'), async (req,
         user.profilePicture = profilePicture;
         await user.save();
 
-        // Commit and push new profile picture
         commitAndPushFiles([req.file.path]);
 
         res.status(200).json({ message: 'Profile picture updated successfully', profilePicture });
