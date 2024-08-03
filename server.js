@@ -6,8 +6,9 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const compression = require('compression');
-const simpleGit = require('simple-git');
+const git = require('simple-git')();
 const cron = require('node-cron');
+const fs = require('fs');
 const app = express();
 
 const uri = process.env.MONGODB_URI;
@@ -78,6 +79,44 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage, limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
+// Configure Git user
+git.addConfig('user.email', 'jheffcds@gmail.com');
+git.addConfig('user.name', 'jheffcds');
+
+// Clone the repository if the uploads folder does not exist
+const repoUrl = 'https://github.com/your-username/your-upload-repo.git'; // Replace with your repository URL
+const localPath = path.join(__dirname, 'uploads');
+
+if (!fs.existsSync(localPath)) {
+    git.clone(repoUrl, localPath)
+        .then(() => console.log('Repository cloned successfully'))
+        .catch(err => console.error('Error cloning repository:', err));
+}
+
+// Set up a cron job to pull updates every 30 seconds
+cron.schedule('*/30 * * * * *', () => {
+    git.pull('origin', 'main', (err, update) => {
+        if (err) {
+            console.error('Error pulling repository updates:', err);
+            return;
+        }
+        if (update && update.summary.changes) {
+            console.log('Repository updated successfully');
+        }
+    });
+});
+
+async function commitAndPushFiles(files) {
+    try {
+        await git.add(files);
+        await git.commit('Add new files');
+        await git.push('origin', 'main');
+        console.log('Files committed and pushed successfully');
+    } catch (err) {
+        console.error('Error committing and pushing files:', err);
+    }
+}
+
 // Register Endpoint
 app.post('/register', upload.single('profilePicture'), async (req, res) => {
     const { email, username, password, dob, gender } = req.body;
@@ -137,11 +176,11 @@ app.post('/create-post', upload.array('media', 10), async (req, res) => {
 
         const post = new Post({ userId, content, imageUrl });
         await post.save();
-        res.status(201).json({ message: 'Post created successfully', imageUrl });
 
-        // Commit and push new files to the repository
-        const newFiles = files.map(file => `uploads/${file.filename}`);
-        await commitAndPushFiles(newFiles);
+        // Commit and push new files
+        commitAndPushFiles(files.map(file => file.path));
+
+        res.status(201).json({ message: 'Post created successfully', imageUrl });
     } catch (error) {
         console.error('Error creating post:', error);
         res.status(500).json({ message: 'Internal server error' });
@@ -176,6 +215,9 @@ app.post('/update-profile-picture', upload.single('profilePicture'), async (req,
 
         user.profilePicture = profilePicture;
         await user.save();
+
+        // Commit and push new profile picture
+        commitAndPushFiles([req.file.path]);
 
         res.status(200).json({ message: 'Profile picture updated successfully', profilePicture });
     } catch (error) {
@@ -264,39 +306,6 @@ app.get('/get-sections/:userId', async (req, res) => {
         res.status(500).json({ message: 'Internal server error' });
     }
 });
-
-const git = simpleGit();
-const repoUrl = 'https://github.com/jheffcds/my-website-backend.git'; // Replace with your repository URL
-const localPath = path.join(__dirname, 'uploads');
-
-// Clone the repository
-git.clone(repoUrl, localPath)
-    .then(() => console.log('Repository cloned successfully'))
-    .catch(err => console.error('Error cloning repository:', err));
-
-// Set up a cron job to pull updates every 30 seconds
-cron.schedule('*/60 * * * * *', () => {
-    git.pull('origin', 'main', (err, update) => {
-        if (err) {
-            console.error('Error pulling repository updates:', err);
-            return;
-        }
-        if (update && update.summary.changes) {
-            console.log('Repository updated successfully');
-        }
-    });
-});
-
-async function commitAndPushFiles(files) {
-    try {
-        await git.add(files);
-        await git.commit('Add new files');
-        await git.push('origin', 'main');
-        console.log('Files committed and pushed successfully');
-    } catch (err) {
-        console.error('Error committing and pushing files:', err);
-    }
-}
 
 const port = process.env.PORT || 8080;
 app.listen(port, () => {
