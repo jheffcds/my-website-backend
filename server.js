@@ -8,7 +8,6 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const compression = require('compression');
-const fs = require('fs');
 const AWS = require('aws-sdk');
 const app = express();
 
@@ -79,7 +78,8 @@ const uploadToS3 = (file) => {
     const params = {
         Bucket: process.env.AWS_BUCKET_NAME,
         Key: Date.now() + path.extname(file.originalname), // File name you want to save as in S3
-        Body: file.buffer
+        Body: file.buffer,
+        ACL: 'public-read' // Set the ACL to public-read
     };
 
     return s3.upload(params).promise();
