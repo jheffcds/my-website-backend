@@ -8,10 +8,16 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const compression = require('compression');
-const git = require('simple-git')();
-const cron = require('node-cron');
 const fs = require('fs');
+const AWS = require('aws-sdk');
 const app = express();
+
+// AWS S3 configuration
+const s3 = new AWS.S3({
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: process.env.AWS_REGION
+});
 
 const uri = process.env.MONGODB_URI;
 
@@ -26,11 +32,6 @@ app.use(cors(corsOptions));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use(compression()); // Enable gzip compression
-
-// Serve static files from the uploads directory
-app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
-    maxAge: '1d'
-}));
 
 mongoose.connect(uri).then(() => {
     console.log('MongoDB connected');
@@ -70,61 +71,31 @@ const sectionSchema = new mongoose.Schema({
 const Section = mongoose.model('Section', sectionSchema);
 
 // Multer configuration for file uploads
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, 'uploads');
-    },
-    filename: function (req, file, cb) {
-        cb(null, Date.now() + path.extname(file.originalname)); // Append the correct extension
-    }
-});
-
+const storage = multer.memoryStorage();
 const upload = multer({ storage: storage, limits: { fileSize: 50 * 1024 * 1024 } }); // 50MB limit
 
-// Configure Git user
-git.addConfig('user.email', process.env.GIT_USER_EMAIL);
-git.addConfig('user.name', process.env.GIT_USER_NAME);
+// Function to upload a file to S3
+const uploadToS3 = (file) => {
+    const params = {
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Key: Date.now() + path.extname(file.originalname), // File name you want to save as in S3
+        Body: file.buffer
+    };
 
-// Clone the repository if the uploads folder does not exist
-const repoUrl = process.env.REPO_URL;
-const localPath = path.join(__dirname, 'uploads');
-
-if (!fs.existsSync(localPath)) {
-    git.clone(repoUrl, localPath)
-        .then(() => console.log('Repository cloned successfully'))
-        .catch(err => console.error('Error cloning repository:', err));
-}
-
-// Set up a cron job to pull updates every 30 seconds
-cron.schedule('*/60 * * * * *', () => {
-    git.pull('origin', 'main', (err, update) => {
-        if (err) {
-            console.error('Error pulling repository updates:', err);
-            return;
-        }
-        if (update && update.summary.changes) {
-            console.log('Repository updated successfully');
-        }
-    });
-});
-
-async function commitAndPushFiles(files) {
-    try {
-        await git.add(files);
-        await git.commit('Add new files');
-        await git.push('origin', 'main');
-        console.log('Files committed and pushed successfully');
-    } catch (err) {
-        console.error('Error committing and pushing files:', err);
-    }
-}
+    return s3.upload(params).promise();
+};
 
 // Register Endpoint
 app.post('/register', upload.single('profilePicture'), async (req, res) => {
     const { email, username, password, dob, gender } = req.body;
-    const profilePicture = req.file ? `/uploads/${req.file.filename}` : null;
+    let profilePicture = null;
 
     try {
+        if (req.file) {
+            const uploadResult = await uploadToS3(req.file);
+            profilePicture = uploadResult.Location; // URL of the uploaded file
+        }
+
         const existingUser = await User.findOne({ $or: [{ email }, { username }] });
         if (existingUser) {
             return res.status(400).json({ message: 'Email or username already exists' });
@@ -174,13 +145,12 @@ app.post('/create-post', upload.array('media', 10), async (req, res) => {
     const files = req.files;
 
     try {
-        const imageUrl = files.map(file => `/uploads/${file.filename}`);
+        const uploadPromises = files.map(file => uploadToS3(file));
+        const uploadResults = await Promise.all(uploadPromises);
+        const imageUrl = uploadResults.map(result => result.Location);
 
         const post = new Post({ userId, content, imageUrl });
         await post.save();
-
-        // Commit and push new files
-        commitAndPushFiles(files.map(file => file.path));
 
         res.status(201).json({ message: 'Post created successfully', imageUrl });
     } catch (error) {
@@ -207,9 +177,14 @@ app.get('/user-posts/:userId', async (req, res) => {
 // Update Profile Picture Endpoint
 app.post('/update-profile-picture', upload.single('profilePicture'), async (req, res) => {
     const { userId } = req.body;
-    const profilePicture = req.file ? `/uploads/${req.file.filename}` : null;
+    let profilePicture = null;
 
     try {
+        if (req.file) {
+            const uploadResult = await uploadToS3(req.file);
+            profilePicture = uploadResult.Location; // URL of the uploaded file
+        }
+
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
@@ -217,9 +192,6 @@ app.post('/update-profile-picture', upload.single('profilePicture'), async (req,
 
         user.profilePicture = profilePicture;
         await user.save();
-
-        // Commit and push new profile picture
-        commitAndPushFiles([req.file.path]);
 
         res.status(200).json({ message: 'Profile picture updated successfully', profilePicture });
     } catch (error) {
