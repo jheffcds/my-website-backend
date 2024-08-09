@@ -10,6 +10,9 @@ const path = require('path');
 const compression = require('compression');
 const AWS = require('aws-sdk');
 const app = express();
+const { createCanvas } = require('canvas');
+const QRCode = require('qrcode');
+
 
 // AWS S3 configuration
 const s3 = new AWS.S3({
@@ -285,3 +288,26 @@ const port = process.env.PORT || 8080;
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
+
+app.post('/generate-qr', async (req, res) => {
+    const { url } = req.body;
+
+    if (!url) {
+        return res.status(400).json({ message: 'URL is required' });
+    }
+
+    try {
+        // Generate the QR code image
+        const canvas = createCanvas(200, 200);
+        await QRCode.toCanvas(canvas, url);
+
+        // Convert the canvas to a data URL
+        const qrImageUrl = canvas.toDataURL();
+
+        res.status(200).json({ qrImageUrl });
+    } catch (error) {
+        console.error('Error generating QR code:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
